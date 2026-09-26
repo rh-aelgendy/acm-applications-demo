@@ -1,0 +1,333 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: catalog
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: catalog
+        demo.acm.example.com/id: aro-retail
+      annotations:
+        demo.acm.example.com/code-sha256: 4eae966670918c65fa7fa24cd3b51dcbc52294a114c871b39d41f7d424a82d78
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: catalog
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - /app/server.py
+        env:
+        - name: MODE
+          value: catalog
+        - name: CLUSTER_NAME
+          value: unknown
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: code
+        configMap:
+          name: retail-code
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  selector:
+    app: catalog
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-quote
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: order-quote
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: order-quote
+        demo.acm.example.com/id: aro-retail
+      annotations:
+        demo.acm.example.com/code-sha256: 4eae966670918c65fa7fa24cd3b51dcbc52294a114c871b39d41f7d424a82d78
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: order-quote
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - /app/server.py
+        env:
+        - name: MODE
+          value: quote
+        - name: CLUSTER_NAME
+          value: unknown
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: code
+        configMap:
+          name: retail-code
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-quote
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  selector:
+    app: order-quote
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: storefront
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: storefront
+        demo.acm.example.com/id: aro-retail
+      annotations:
+        demo.acm.example.com/code-sha256: 4eae966670918c65fa7fa24cd3b51dcbc52294a114c871b39d41f7d424a82d78
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: storefront
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        imagePullPolicy: IfNotPresent
+        command:
+        - python3
+        - /app/server.py
+        env:
+        - name: MODE
+          value: storefront
+        - name: CLUSTER_NAME
+          value: unknown
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: code
+        configMap:
+          name: retail-code
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storefront
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  selector:
+    app: storefront
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: storefront
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  to:
+    kind: Service
+    name: storefront
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: order-quote
+  labels:
+    demo.acm.example.com/id: aro-retail
+  namespace: acm-demo-prod
+spec:
+  to:
+    kind: Service
+    name: order-quote
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
