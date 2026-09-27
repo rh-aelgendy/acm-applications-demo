@@ -8,6 +8,7 @@ Public GitOps sources for the retail and payments demonstrations on OpenShift.
 | `retail/overlays/production` | Retail production deployment |
 | `retail/overlays/mobility` | Retail workload portability deployment |
 | `payments` | Payments team application |
+| `retail-orders` | [Three-tier storefront, orders API and persistent PostgreSQL](retail-orders/README.md) |
 
 Argo CD ApplicationSets consume these paths on `main`. ACM Placements choose the destination clusters. Namespaces, governance policies, registration and credentials are prepared separately by the platform.
 

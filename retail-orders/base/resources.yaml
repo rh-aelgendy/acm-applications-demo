@@ -1,0 +1,671 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-runtime
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-bootstrap
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: orders-bootstrap
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - secrets
+  resourceNames:
+  - orders-db-credentials
+  verbs:
+  - get
+- apiGroups:
+  - ''
+  resources:
+  - secrets
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: orders-bootstrap
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: orders-bootstrap
+subjects:
+- kind: ServiceAccount
+  name: orders-bootstrap
+  namespace: retail-orders-demo
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: orders-credentials
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: retail-orders
+        app: orders-bootstrap
+    spec:
+      serviceAccountName: orders-bootstrap
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: generate
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        command:
+        - python3
+        - /app/credentials.py
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: code
+        configMap:
+          name: orders-bootstrap-code
+      - name: tmp
+        emptyDir: {}
+      restartPolicy: Never
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '1'
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: retail-orders
+        app: orders-api
+    spec:
+      serviceAccountName: orders-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: orders-api
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        command:
+        - python3
+        - /app/api.py
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: &id001
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile: &id002
+            type: RuntimeDefault
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        - name: PYTHONPATH
+          value: /deps
+        - name: DB_HOST
+          value: orders-db
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: orders-db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: orders-db-credentials
+              key: password
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: orders-db-credentials
+              key: database
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: deps
+          mountPath: /deps
+          readOnly: true
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: code
+        configMap:
+          name: orders-api-code
+      - name: tmp
+        emptyDir: {}
+      - name: deps
+        emptyDir: {}
+      initContainers:
+      - name: python-dependencies
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        command:
+        - python3
+        - -m
+        - pip
+        - install
+        - --disable-pip-version-check
+        - --no-cache-dir
+        - '--only-binary=:all:'
+        - --require-hashes
+        - --target=/deps
+        - -r
+        - /app/requirements.txt
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: *id001
+          runAsNonRoot: true
+          seccompProfile: *id002
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: deps
+          mountPath: /deps
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  selector:
+    app: orders-api
+  ports:
+  - port: 8080
+    targetPort: http
+    name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-web
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: orders-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: retail-orders
+        app: orders-web
+    spec:
+      serviceAccountName: orders-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: orders-web
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        command:
+        - python3
+        - /app/frontend.py
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        env:
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        - name: API_URL
+          value: http://orders-api:8080
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: code
+        configMap:
+          name: orders-web-code
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-web
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  selector:
+    app: orders-web
+  ports:
+  - port: 8080
+    targetPort: http
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-db
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  clusterIP: None
+  selector:
+    app: orders-db
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: postgres
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orders-data
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-db
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  serviceName: orders-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: retail-orders
+        app: orders-db
+    spec:
+      serviceAccountName: orders-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgresql
+        image: quay.io/sclorg/postgresql-16-c9s@sha256:b508e74304788fb4a5a2af76d8d013f20a18ee38bff3d24a705d7b730b8c0a30
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: orders-db-credentials
+              key: username
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: orders-db-credentials
+              key: password
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: orders-db-credentials
+              key: database
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: orders-data
+          mountPath: /var/lib/pgsql/data
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - orders
+            - -d
+            - orders
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - orders
+            - -d
+            - orders
+          initialDelaySeconds: 60
+          periodSeconds: 10
+      volumes:
+      - name: orders-data
+        persistentVolumeClaim:
+          claimName: orders-data
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: retail-orders
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  to:
+    kind: Service
+    name: orders-web
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-default-deny
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-db
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  podSelector:
+    matchLabels:
+      app: orders-db
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: orders-api
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-api
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  podSelector:
+    matchLabels:
+      app: orders-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: orders-web
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: UDP
+      port: 5353
+    - protocol: TCP
+      port: 53
+    - protocol: TCP
+      port: 5353
+  - to:
+    - podSelector:
+        matchLabels:
+          app: orders-db
+    ports:
+    - protocol: TCP
+      port: 5432
+  - ports:
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-web
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  podSelector:
+    matchLabels:
+      app: orders-web
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: ingress
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openshift-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: UDP
+      port: 5353
+    - protocol: TCP
+      port: 53
+    - protocol: TCP
+      port: 5353
+  - to:
+    - podSelector:
+        matchLabels:
+          app: orders-api
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-bootstrap
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  podSelector:
+    matchLabels:
+      app: orders-bootstrap
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 6443

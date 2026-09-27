@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: retail-orders-demo
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+    argocd.argoproj.io/managed-by: openshift-gitops
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: retail-orders
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  namespace: openshift-gitops
+spec:
+  sourceRepos:
+  - https://github.com/rh-aelgendy/acm-applications-demo.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: retail-orders-demo
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: PersistentVolumeClaim
+  - group: ''
+    kind: ServiceAccount
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: StatefulSet
+  - group: batch
+    kind: Job
+  - group: networking.k8s.io
+    kind: NetworkPolicy
+  - group: rbac.authorization.k8s.io
+    kind: Role
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+  - group: route.openshift.io
+    kind: Route

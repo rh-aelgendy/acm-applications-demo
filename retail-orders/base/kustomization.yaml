@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- resources.yaml
+configMapGenerator:
+- name: orders-web-code
+  files:
+  - frontend.py
+  - index.html
+  options:
+    annotations:
+      argocd.argoproj.io/sync-wave: '-2'
+- name: orders-api-code
+  files:
+  - api.py
+  - requirements.txt
+  options:
+    annotations:
+      argocd.argoproj.io/sync-wave: '-2'
+- name: orders-bootstrap-code
+  files:
+  - credentials.py
+  options:
+    annotations:
+      argocd.argoproj.io/sync-wave: '-2'
+generatorOptions:
+  labels:
+    app.kubernetes.io/part-of: retail-orders

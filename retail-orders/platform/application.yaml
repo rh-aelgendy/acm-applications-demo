@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: retail-orders
+  labels:
+    app.kubernetes.io/part-of: retail-orders
+  namespace: openshift-gitops
+spec:
+  project: retail-orders
+  source:
+    repoURL: https://github.com/rh-aelgendy/acm-applications-demo.git
+    targetRevision: main
+    path: retail-orders
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: retail-orders-demo
+  syncPolicy:
+    syncOptions:
+    - CreateNamespace=false
