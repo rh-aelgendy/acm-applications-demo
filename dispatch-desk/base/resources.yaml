@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatch-desk
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: dispatch-desk
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dispatch-desk
+        app: dispatch-desk
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: dispatch-desk
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        command:
+        - python3
+        - /app/server.py
+        env:
+        - name: MODE
+          value: frontend
+        - name: CLUSTER_NAME
+          value: unconfigured
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        ports:
+        - name: http
+          containerPort: 8080
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+      volumes:
+      - name: code
+        configMap:
+          name: dispatch-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatch-desk
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+spec:
+  selector:
+    app: dispatch-desk
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quote-engine
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: quote-engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dispatch-desk
+        app: quote-engine
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: quote-engine
+        image: registry.access.redhat.com/ubi9/python-312@sha256:d350329565030871c36d24c43533db869e892390fb47dc5c44512a32792dc623
+        command:
+        - python3
+        - /app/server.py
+        env:
+        - name: MODE
+          value: engine
+        - name: CLUSTER_NAME
+          value: unconfigured
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
+        ports:
+        - name: http
+          containerPort: 8080
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        volumeMounts:
+        - name: code
+          mountPath: /app
+          readOnly: true
+      volumes:
+      - name: code
+        configMap:
+          name: dispatch-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quote-engine
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+spec:
+  selector:
+    app: quote-engine
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dispatch-desk
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+spec:
+  to:
+    kind: Service
+    name: dispatch-desk
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

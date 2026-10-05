@@ -1,0 +1,134 @@
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: dispatch-desk
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+  namespace: openshift-gitops
+spec:
+  clusterSets:
+  - default
+  predicates:
+  - requiredClusterSelector:
+      labelSelector:
+        matchLabels:
+          demo.acm.example.com/dispatch: 'true'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dispatch-decisions
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+  namespace: openshift-gitops
+data:
+  apiVersion: cluster.open-cluster-management.io/v1beta1
+  kind: placementdecisions
+  statusListKey: decisions
+  matchKey: clusterName
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dispatch-decisions
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+  namespace: openshift-gitops
+rules:
+- apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placementdecisions
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dispatch-decisions
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+  namespace: openshift-gitops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dispatch-decisions
+subjects:
+- kind: ServiceAccount
+  name: openshift-gitops-applicationset-controller
+  namespace: openshift-gitops
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dispatch-desk
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+  namespace: openshift-gitops
+spec:
+  sourceRepos:
+  - https://github.com/rh-aelgendy/acm-applications-demo.git
+  destinations:
+  - server: '*'
+    namespace: acm-demo-dispatch
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Service
+  - group: apps
+    kind: Deployment
+  - group: route.openshift.io
+    kind: Route
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dispatch-desk
+  labels:
+    app.kubernetes.io/part-of: dispatch-desk
+  namespace: openshift-gitops
+spec:
+  generators:
+  - clusterDecisionResource:
+      configMapRef: dispatch-decisions
+      labelSelector:
+        matchLabels:
+          cluster.open-cluster-management.io/placement: dispatch-desk
+      requeueAfterSeconds: 10
+  syncPolicy:
+    preserveResourcesOnDeletion: false
+  template:
+    metadata:
+      name: dispatch-desk-{{name}}
+      labels:
+        app.kubernetes.io/part-of: dispatch-desk
+    spec:
+      project: dispatch-desk
+      source:
+        repoURL: https://github.com/rh-aelgendy/acm-applications-demo.git
+        targetRevision: main
+        path: dispatch-desk/base
+        kustomize:
+          patches:
+          - target:
+              kind: Deployment
+            patch: "- op: replace\n  path: /spec/template/spec/containers/0/env/1/value\n\
+              \  value: \"{{name}}\"\n"
+          replicas:
+          - name: dispatch-desk
+            count: 1
+          - name: quote-engine
+            count: 1
+      destination:
+        server: '{{server}}'
+        namespace: acm-demo-dispatch
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=false

@@ -7,6 +7,7 @@ Public GitOps sources for the retail and payments demonstrations on OpenShift.
 | `retail/overlays/development` | Retail development deployment |
 | `retail/overlays/production` | Retail production deployment |
 | `retail/overlays/mobility` | Retail workload portability deployment |
+| `dispatch-desk/base` | [Stateless placement-driven portability, fleet expansion and replica scaling](dispatch-desk/README.md) |
 | `payments` | Payments team application |
 | `retail-orders` | [Three-tier storefront, orders API and persistent PostgreSQL](retail-orders/README.md) |
 
