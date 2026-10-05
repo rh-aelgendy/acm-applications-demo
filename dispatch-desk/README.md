@@ -8,12 +8,24 @@ Use ACM Placement and OpenShift GitOps to deploy on one cluster, expand to two, 
 
 The app uses a digest-pinned public `registry.access.redhat.com/ubi9/python-312` image and Python standard library only. No build, pip download or registry credentials are needed. OpenShift Routes and restricted security contexts are assumed. Generated ConfigMap hashes roll the application when code changes.
 
+## Short customer demo — 5–7 minutes
+
+After preparation, use this flow. Sync is automatic: there is no manual Argo CD sync step.
+
+1. **Cloud only:** select the cloud cluster with `demo.acm.example.com/dispatch=true`. Open its application and calculate a regional 3 kg quote: €14, with the actual cloud cluster name.
+2. **Expand:** in ACM → Infrastructure → Clusters → destination → Labels, add the same label to the destination. Keep cloud selected.
+3. **Verify:** in ACM Applications inspect `dispatch-desk`. Search `kind:Application namespace:openshift-gitops` for the generated destination Application and wait for Synced/Healthy. Open the destination endpoint, calculate the same quote, and verify its cluster identity. Stop if this fails.
+4. **Move:** remove only the dispatch label from the cloud cluster. Its generated Application and owned app resources disappear. Verify a fresh destination quote still succeeds. This is deliberate stateless source retirement, not a traffic or data migration.
+5. **Reset:** select cloud again, wait for readiness and a successful quote, then deselect the destination. The namespace and facilitator permissions remain for reuse.
+
+Say: “The business needs the application in another location. ACM selects that destination; GitOps deploys the same application automatically. We validate it, then retire the old deployment.” Both clusters in the rehearsal are ARO; the on-premises role is simulated. Keep replica scaling as an optional extension, not part of the short story.
+
 ## Facilitator preparation — once per fleet
 
 1. Have two Available ManagedClusters, each registered with the hub's Argo CD through GitOpsCluster. ACM import alone does not grant Argo deployment access. Use the actual ManagedCluster identifiers, not their display names.
 2. Check the installed schemas for Placement, ManagedClusterSetBinding, ApplicationSet and AppProject. The examples use the same served API versions as the existing demo; discover and validate them on a new environment before applying.
 3. Use the `default` ManagedClusterSet and its binding in `openshift-gitops`, or edit the example for your existing set. Reuse the shared binding; do not replace or delete it. `platform/clusterset-binding.example.yaml` is only for a missing binding after confirming access.
-4. On **each cluster**, use **+ → Import YAML** for `platform/namespace.yaml`. This creates only the dedicated `acm-demo-dispatch` namespace. Confirm it has no unrelated resources. Ensure the registered Argo identity may manage ConfigMaps, Services, Deployments and Routes in it. The application deliberately cannot create namespaces or cluster-scoped resources.
+4. On **each cluster**, use **+ → Import YAML** for `platform/namespace.yaml`. This creates only the dedicated `acm-demo-dispatch` namespace. Confirm it has no unrelated resources. Review and import `platform/gitops-rbac.yaml` on each cluster: it grants namespaced application permissions to the existing `acm-demo-gitops` managed service account and the hub GitOps controller. Adapt these subjects if your registration uses different identities. Ensure the registered Argo identity may manage ConfigMaps, Services, Deployments and Routes in it. The application deliberately cannot create namespaces or cluster-scoped resources.
 5. Review `platform/hub.yaml`. Confirm the ApplicationSet controller service-account name in its RoleBinding matches the installation. The project restricts resources and namespace; the fleet boundary is the chosen ClusterSet and label selector. No IAM or Azure credentials are involved.
 6. Validate both bundles client-side and server-side before importing the hub bundle. Namespace existence is required for server validation. Initially neither cluster should have `demo.acm.example.com/dispatch=true`, so no Application is generated.
 
@@ -36,7 +48,7 @@ For the cloud-to-on-premises story, call the HCP cluster **source/cloud** and th
 | 1. ACM → Infrastructure → Clusters → source → Labels. Add `demo.acm.example.com/dispatch=true`. | Placement `dispatch-desk` selects the source. In ACM Applications / Argo CD, `dispatch-desk-<source>` becomes Synced and Healthy. “One approved application definition, deployed by placement.” | Inspect PlacementDecision, registration and Application conditions; do not advance while unhealthy. |
 | 2. Source console → Networking → Routes → project `acm-demo-dispatch` → dispatch-desk → Location. Calculate a regional, 3 kg quote. | €14 and the real source cluster/pod. “The application tells us where it ran.” | For private ingress use the facilitator port-forward below. Do not expose the private cluster publicly. |
 | 3. ACM → Infrastructure → Clusters → destination → Labels. Add the same label, leaving the source selected. | PlacementDecision lists both clusters; a second Application becomes Healthy. Open its endpoint and repeat the quote. Same result, different cluster. “Expand before retiring the source.” | Keep the source selected if destination health or access fails. |
-| 4. Hub console → Home → Search → ApplicationSet → `openshift-gitops/dispatch-desk` → YAML. In `spec.template.spec.source.kustomize.replicas`, change quote-engine `count: 1` to `count: 3`. | Both Applications reconcile; each selected cluster has three Ready quote-engine pods. “Replica scaling is distinct from adding another cluster.” | Inspect Argo diff/sync events. Do not edit the generated Application or live Deployment; controllers restore them. Restore count 1 after demonstrating. |
+| 4. ACM → Search → query `kind:ApplicationSet namespace:openshift-gitops` → `openshift-gitops/dispatch-desk` → YAML. In `spec.template.spec.source.kustomize.replicas`, change quote-engine `count: 1` to `count: 3`. | Both Applications reconcile; each selected cluster has three Ready quote-engine pods. “Replica scaling is distinct from adding another cluster.” | Inspect Argo diff/sync events. Do not edit the generated Application or live Deployment; controllers restore them. Restore count 1 after demonstrating. |
 | 5. Explain the new residency requirement, verify the destination quote, then remove the dispatch label from the source in ACM. | Source Application and its owned workloads are deleted; destination remains Healthy. “ACM selects the destination; GitOps retires the old stateless deployment.” | If destination validation fails, do not deselect source. To recover after removal, re-add the label and wait for redeployment. This is not instantaneous traffic rollback. |
 | 6. Show destination's fresh quote and source Deployments list. | Only destination serves this deployment; source's dedicated namespace remains. No data or traffic migration is claimed. | Use ACM Search and Argo resource status if browser access is unavailable; label it deployment evidence, not successful request evidence. |
 
@@ -60,7 +72,7 @@ Reset through the same UI: select source again, wait for Healthy and a successfu
 
 ## Validation
 
-Status: local Kustomize rendering and HTTP/quote tests pass. Live API validation and two-cluster rehearsal are pending renewed hub authentication; this is not yet a live-tested module.
+Status: live rehearsal passed on 2026-10-05 using ACM 2.17 on the existing ARO fleet. Both targets accepted strict client/server dry-runs. Automatic deployment, identical €14 quotes with distinct cluster identities, three Ready engine replicas per cluster, source retirement and return to cloud-only were exercised. The application UI was checked in the browser. Other fleets still need their own preparation and validation.
 
 ```sh
 python3 -m unittest discover -s dispatch-desk/tests
