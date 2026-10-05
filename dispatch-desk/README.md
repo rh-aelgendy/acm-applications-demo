@@ -1,6 +1,6 @@
 # Dispatch Desk — placement-driven portability
 
-A stateless, two-service delivery-quote application. A frontend calls an internal quote engine; every quote identifies the actual cluster and engine pod. The same regional 3 kg quote returns €14 on either cluster. There is no database, session store, PVC, Azure SDK, or AAP dependency.
+A two-service delivery-quote application with the message **One platform. Run anywhere.** A frontend calls an internal quote engine. The page highlights the deployment location and actual cluster, while keeping workshop mechanics in this guide. The same regional 3 kg quote returns €14 on either cluster. There is no database, session store, PVC, Azure SDK, or AAP dependency.
 
 ## Objective and boundaries
 
@@ -12,13 +12,17 @@ The app uses a digest-pinned public `registry.access.redhat.com/ubi9/python-312`
 
 After preparation, use this flow. Sync is automatic: there is no manual Argo CD sync step.
 
-1. **Cloud only:** select the cloud cluster with `demo.acm.example.com/dispatch=true`. Open its application and calculate a regional 3 kg quote: €14, with the actual cloud cluster name.
+1. **Today: Azure.** Open the cloud application Route. Show the Azure deployment location and calculate a Regional, 3 kg quote: €14. State the new business requirement to move it on-premises.
 2. **Expand:** in ACM → Infrastructure → Clusters → destination → Labels, add the same label to the destination. Keep cloud selected.
 3. **Verify:** in ACM Applications inspect `dispatch-desk`. Search `kind:Application namespace:openshift-gitops` for the generated destination Application and wait for Synced/Healthy. Open the destination endpoint, calculate the same quote, and verify its cluster identity. Stop if this fails.
-4. **Move:** remove only the dispatch label from the cloud cluster. Its generated Application and owned app resources disappear. Verify a fresh destination quote still succeeds. This is deliberate stateless source retirement, not a traffic or data migration.
+4. **Retire Azure:** after verifying the destination Route shows On-premises and the same quote, remove only the dispatch label from the cloud cluster. Its generated Application and owned app resources disappear. Verify a fresh destination quote still succeeds. This is deliberate stateless source retirement, not a traffic or data migration.
 5. **Reset:** select cloud again, wait for readiness and a successful quote, then deselect the destination. The namespace and facilitator permissions remain for reuse.
 
 Say: “The business needs the application in another location. ACM selects that destination; GitOps deploys the same application automatically. We validate it, then retire the old deployment.” Both clusters in the rehearsal are ARO; the on-premises role is simulated. Keep replica scaling as an optional extension, not part of the short story.
+
+The visible location comes from `DEPLOYMENT_LOCATION`, configured in the ApplicationSet's Kustomize patch. This example maps `aro-hcp-spoke` to Azure and `local-hub-aro` to the simulated On-premises role; other clusters default to OpenShift. Adapt this explicit map for your environment. Edge is a possible demonstration role, not a deployed third location. Never mistake the display role for discovered physical infrastructure. Prices are synthetic; the app stores no orders or persistent data.
+
+Use actual Routes for the customer presentation. A private Route requires a browser on a connected network. A local tunnel is a rehearsal aid only; do not describe localhost as a cloud endpoint.
 
 ## Facilitator preparation — once per fleet
 

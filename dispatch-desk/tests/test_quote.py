@@ -20,7 +20,7 @@ class HTTP(unittest.TestCase):
         import os, threading, json
         from urllib.request import urlopen
         from urllib.error import HTTPError
-        os.environ['MODE']='engine';os.environ['CLUSTER_NAME']='test-fleet-destination'
+        os.environ['MODE']='engine';os.environ['CLUSTER_NAME']='test-fleet-destination';os.environ['DEPLOYMENT_LOCATION']='Edge'
         server=m.ThreadingHTTPServer(('127.0.0.1',0),m.Handler)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
@@ -28,6 +28,9 @@ class HTTP(unittest.TestCase):
             with urlopen(base+'/api/quote?zone=regional&weight=3') as response:
                 data=json.load(response)
             self.assertEqual(data['cluster'],'test-fleet-destination')
+            self.assertEqual(data['location'],'Edge')
+            with urlopen(base+'/api/location') as response:
+                self.assertEqual(json.load(response),{'cluster':'test-fleet-destination','location':'Edge'})
             self.assertEqual(data['price_eur'],14)
             with self.assertRaises(HTTPError) as failure:urlopen(base+'/api/quote?weight=-1')
             self.assertEqual(failure.exception.code,400)

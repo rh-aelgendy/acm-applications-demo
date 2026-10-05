@@ -103,7 +103,7 @@ spec:
     preserveResourcesOnDeletion: false
   template:
     metadata:
-      name: dispatch-desk-{{name}}
+      name: dispatch-desk-{{.name}}
       labels:
         app.kubernetes.io/part-of: dispatch-desk
     spec:
@@ -117,14 +117,17 @@ spec:
           - target:
               kind: Deployment
             patch: "- op: replace\n  path: /spec/template/spec/containers/0/env/1/value\n\
-              \  value: \"{{name}}\"\n"
+              \  value: \"{{.name}}\"\n- op: add\n  path: /spec/template/spec/containers/0/env/-\n\
+              \  value:\n    name: DEPLOYMENT_LOCATION\n    value: '{{ if eq .name\
+              \ \"aro-hcp-spoke\" }}Azure{{ else if eq .name \"local-hub-aro\" }}On-premises{{\
+              \ else }}OpenShift{{ end }}'\n"
           replicas:
           - name: dispatch-desk
             count: 1
           - name: quote-engine
             count: 1
       destination:
-        server: '{{server}}'
+        server: '{{.server}}'
         namespace: acm-demo-dispatch
       syncPolicy:
         automated:
@@ -132,3 +135,6 @@ spec:
           selfHeal: true
         syncOptions:
         - CreateNamespace=false
+  goTemplate: true
+  goTemplateOptions:
+  - missingkey=error

@@ -29,6 +29,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == '/healthz':
             return self.respond(200, {'healthy': True})
+        if parsed.path == '/api/location':
+            return self.respond(200, {'cluster': os.getenv('CLUSTER_NAME', 'unconfigured'),
+                                      'location': os.getenv('DEPLOYMENT_LOCATION', 'OpenShift')})
         if parsed.path == '/' and os.getenv('MODE') == 'frontend':
             return self.respond(200, Path(__file__).with_name('index.html').read_bytes(), 'text/html; charset=utf-8')
         if parsed.path != '/api/quote':
@@ -40,7 +43,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200, upstream.read())
             args = parse_qs(parsed.query)
             result = quote(args.get('zone', ['regional'])[0], int(args.get('weight', ['3'])[0]))
-            result.update(cluster=os.getenv('CLUSTER_NAME', 'unconfigured'), pod=os.getenv('HOSTNAME', 'local'))
+            result.update(location=os.getenv('DEPLOYMENT_LOCATION', 'OpenShift'), cluster=os.getenv('CLUSTER_NAME', 'unconfigured'), pod=os.getenv('HOSTNAME', 'local'))
             return self.respond(200, result)
         except (ValueError, TypeError):
             return self.respond(400, {'error': 'Invalid quote parameters'})
